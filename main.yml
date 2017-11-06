@@ -1,0 +1,112 @@
+
+This my deploy.yml file which will run in ansible tower for deploying code to production servers, you might need a different one according to your requirement, just take it as reference.
+
+
+
+
+---
+- name: Deploy ASP.Net Code
+  hosts: windows
+  tasks:    
+    - block:
+      - name: Set variables
+        set_fact:
+          vars_files:
+            - "group_vars/windows/myvault"
+            - "group_vars/windows/win"
+      
+      - set_fact: datetime="{{lookup('pipe','date +%Y%m%d%H%M%S')}}"
+      - debug: var=datetime
+      
+      - name: Create temp folder
+        win_file:
+          path: "{{ towerJobWorkingDirectory }}-{{ datetime }}/{{ appName }}/Deploy/IIS"
+          state: directory
+        register: createFolder_result
+
+      - debug:
+          var: createFolder_result
+          verbosity: 2
+
+      - name: echo path
+        win_shell: "echo %PATH%"
+        register: path_result
+
+      - debug: var=path_result.stdout_lines
+
+      - name: Download the artifact from Nexus 
+        win_get_url: 
+          url: "{{ nexusUrl }}/repository/{{ nexusRepositoryName }}/{{ nexusGroupID }}/{{ nexusArtifactID }}/{{ nexusVersion }}/{{ nexusArtifactID }}-{{ nexusVersion}}.zip"
+          dest: "{{ towerJobWorkingDirectory }}-{{ datetime }}/{{ nexusArtifactID }}-{{ nexusVersion}}.zip"
+          force: yes
+          skip_certificate_validation: yes
+        register: log_result
+      
+      - debug: 
+          var: log_result
+          verbosity: 2
+        
+      - name: Unzip the artifact
+        win_unzip: 
+          src: "{{ towerJobWorkingDirectory }}-{{ datetime}}/{{ nexusArtifactID }}-{{ nexusVersion }}.zip"
+          dest: "{{ towerJobWorkingDirectory }}-{{ datetime}}/{{ appName }}"
+          recurse: no
+        register: unzip_result
+      
+      - debug:
+          var: unzip_result
+          verbosity: 5
+      
+      - name: Copy files to Deploy folder, excluding Web.config files
+        raw: Copy-Item "{{ towerJobWorkingDirectory }}-{{ datetime }}/{{ appName }}/*" -Destination "{{ towerJobWorkingDirectory }}-{{ datetime }}/{{ appName }}/Deploy/" -Exclude Web*config -Force #-Recurse
+        register: excludeWebConfig_result
+      
+      - debug:
+          var: excludeWebConfig_result
+          verbosity: 5
+        
+      - debug:
+          msg: "Environment is: {{env}}"
+      
+      - name: Copying Web.config file for corresponding environment 
+        raw: Copy-Item "{{ towerJobWorkingDirectory }}-{{ datetime }}/{{ appName }}/Web.{{ env }}.config" -Destination "{{ towerJobWorkingDirectory }}-{{ datetime }}/{{ appName }}/Deploy/Web.config" -Force
+        register: webConfigCopy_result
+      
+      - debug:
+          var: webConfigCopy_result
+          verbosity: 5
+      
+        # stop IIS app pool
+
+      - name: Deploy application code using msdeploy
+        win_shell: "C:/Program Files/IIS/Microsoft Web Deploy V3/msdeploy.exe -verb:sync -source:contentPath=D:/AnsibleTowerTempDir/pims/Deploy -dest:contentPath=D:/AnsibleTowerTempDir/pims/Deploy/IIS -useChecksum"
+        register: msdeploy_result        
+        #C:/Program Files/IIS/Microsoft Web Deploy V3/msdeploy.exe
+        #win_shell: "C:/Program Files/IIS/Microsoft Web Deploy V3/msdeploy.exe" "-verb:sync" "-source:contentPath={{ towerJobWorkingDirectory }}-{{ datetime }}/{{ appName }}/Deploy" "-dest:contentPath={{ towerJobWorkingDirectory }}-{{ datetime }}/{{ appName }}/Deploy/IIS -useChecksum"
+
+      - debug:
+          var: msdeploy_result.stdout_lines
+          verbosity: 5
+        
+      - name: Print folder contents
+        win_find:
+          paths: "{{ towerJobWorkingDirectory }}-{{ datetime }}"          
+        register: print_result
+
+      - debug:
+          var: print_result
+          verbosity: 5
+        
+        # start IIS app pool
+
+
+      always:
+      - name: Remove temp folder
+        win_file:
+          path: "{{ towerJobWorkingDirectory }}-{{ datetime }}"
+          state: absent
+        register: tempFolder_removal
+      
+      - debug:
+          var: tempFolder_removal
+          verbosity: 5
