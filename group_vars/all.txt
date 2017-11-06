@@ -1,0 +1,11 @@
+env: Test
+envSuffix:
+nexusUrl: https://nexus.nml.com
+nexusRepositoryName: raw-hosted
+nexusGroupID: MI
+nexusArtifactID: pims
+nexusVersion: 5ca8c43
+appPoolName: pims
+iisPhysicalDirectory: D:/AnsibleTowerTempDir #D:/webapps/{{ appPoolName }}/installedApps/{{ appName }}{{ envSuffix }}
+towerJobWorkingDirectory: D:/AnsibleTowerTempDir
+appName: pims
